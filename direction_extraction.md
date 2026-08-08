@@ -101,5 +101,6 @@ generates on held-out AdvBench prompts (disjoint from extraction prompts,
 using ablation code re-imported byte-identical from
 `wmdp_bio_lm_eval_ablation.py`) with and without ablation, and measures the
 refusal rate. See [results.md](results.md) for the outcome -- ablation
-cleanly bypasses refusal behavior for some models (ILU-RMU, GradDiff) and not
-others, independent of whether WMDP-Bio accuracy moves.
+fully validates a clean refusal bypass only for ILU-RMU (GradDiff collapses
+refusal phrases but stays mostly degenerate), independent of whether
+WMDP-Bio accuracy moves.

@@ -67,6 +67,13 @@ rising ahead of accuracy is the cleanest suppression-not-removal signature.
 - `../scripts/analyze_paired_recovery.py` -- paired McNemar / bootstrap
   significance test between any two conditions' `per_doc_correctness` files;
   shared with the ablation arm since both persist that format.
+- `sample_gsm8k_free_text.py` -- reads raw free-text `gsm8k` completions
+  (same model-loading path, seed, and eval config as `eval_recovery_lm_eval.py`,
+  but keeps the generations instead of discarding them) to check whether the
+  full-knowledge control's own GSM8K score falling across its SFT checkpoints
+  is degenerate generation, a formatting artifact, or genuine arithmetic
+  damage -- see [results.md](../results.md#is--looping-a-property-of-the-gsm8k-recipe-itself-or-specific-to-the-damaged-models)
+  for the outcome.
 
 ## Run order
 
