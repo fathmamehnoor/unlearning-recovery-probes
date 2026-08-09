@@ -1,64 +1,97 @@
-# Unlearning Recovery Probes
+# Probing Knowledge Recovery in Unlearned Models
 
-Does machine unlearning remove knowledge from a language model, or just
-suppress access to it? Low accuracy on a forget-set benchmark doesn't tell
-you which -- a genuinely-removed fact and a merely-hidden one score the same.
-This repository holds three independent probes for telling them apart,
-applied to the same six WMDP-unlearned Llama-3-8B-Instruct checkpoints
-(RMU, ILU-RMU, IDK-AP, GradDiff, NPO, NPO-ILU):
+Does machine unlearning remove knowledge from a language model, or does it only suppress access to it?
 
-1. **Refusal-direction ablation** -- does removing the direction that
-   mediates refusal behavior also uncover forgotten knowledge?
-2. **Forget-domain representation-direction ablation** -- does removing a
-   direction built directly from the unlearned-vs-base activation shift on
-   forget-domain text (replicating & extending [Arditi & Chughtai](https://www.lesswrong.com/posts/6QYpXEscd8GuE7BgW/unlearning-via-rmu-is-mostly-shallow))?
-3. **Unrelated supervised fine-tuning** -- does QLoRA SFT on GSM8K (a dataset
-   with near-zero mutual information with WMDP-bio) disturb the unlearned
-   weights enough to raise WMDP-Bio accuracy?
+This repository contains the code for three experiments that test whether knowledge can be recovered from unlearned models. All three experiments use the same six WMDP-unlearned Llama-3-8B-Instruct checkpoints: RMU, ILU-RMU, IDK-AP, GradDiff, NPO, and NPO-ILU.
 
-**Headline results:**
+The three recovery probes are:
 
-- **Probe 1 (refusal direction):** no recovery beyond random/matched-control
-  ablation for any of the 6 methods, even for **ILU-RMU** -- the one
-  checkpoint where the same direction demonstrably collapses refusal
-  behavior 98%&rarr;0% with 100% clean bypass. 95% CIs exclude recovery
-  larger than ~1.4pp on the interpretable rows.
-- **Probe 2 (representation direction):** a differently-built direction
-  recovers **57% (RMU)** and **61% (ILU-RMU)** of the gap to full-knowledge
-  WMDP-Bio accuracy, McNemar-significant at p < 1e-27 against baseline,
-  matched control, and 8 random-direction controls. The same construction
-  finds nothing beyond matched control for GradDiff, NPO, NPO-ILU, or IDK-AP
-  (pre-registered null, Bonferroni-corrected).
-- **Probe 3 (unrelated SFT):** WMDP-Bio accuracy rises for 5 of 6 methods
-  after GSM8K fine-tuning, with MMLU held flat for RMU (+41pp bio),
-  ILU-RMU (+24pp), and NPO (+23pp) -- GradDiff's rise is confounded by a
-  matching MMLU jump (general capability repair, not suppression coming
-  undone); a full-knowledge control run through the identical recipe stays
-  flat.
-- **Benchmark accuracy overstates recovery.** All of the above is
-  forced-choice loglikelihood scoring -- the model never generates anything.
-  Reading the actual free-text completions on flipped questions (genuine /
-  format-artifact / contradictory reasoning, blinded human labeling) finds
-  only ~40-47% verified-genuine recovery where accuracy suggested more, and
-  RMU-family checkpoints turn out to contradict their *own* stably-correct
-  forced-choice answers 30-37% of the time even with no ablation involved --
-  well above the full-knowledge base model's 6.7% floor. Two of six methods
-  (NPO-ILU, and NPO under some interventions) produce free text too
-  incoherent to classify at all, which forced-choice accuracy alone doesn't
-  surface.
+1. **Refusal-direction ablation:** Does removing a direction that controls refusal behavior recover forgotten knowledge?
+2. **Forget-set representation-direction ablation:** Does removing a direction constructed from the difference between the base and unlearned model on forget-set prompts recover knowledge?
+3. **Unrelated supervised fine-tuning:** Does fine-tuning on unrelated data cause the model to recover knowledge that was removed by unlearning?
 
-Full results and the reasoning behind each conclusion: [results.md](results.md).
-Companion write-up: *Probing Knowledge Recovery in Unlearned Models*.
+The experiments suggest that different recovery probes reveal different behavior. In particular, some checkpoints show increased WMDP-Bio accuracy after representation-direction ablation or unrelated fine-tuning, while refusal-direction ablation does not recover knowledge in the one checkpoint where the refusal direction could be cleanly identified.
 
-## Results and writeups
+The experiments also show that WMDP forced-choice accuracy is not enough to establish genuine knowledge recovery. Some of the apparent recovery comes from contradictory or degenerate generations.
 
-- [results.md](results.md) -- results summary for all three probes
-- [direction_extraction.md](direction_extraction.md) -- refusal-direction
-  prompt source, candidate sweep, and selection procedure (Probe 1)
-- [junk_direction_ablation/README.md](junk_direction_ablation/README.md) --
-  representation-direction construction and pipeline (Probe 2)
-- [wmdp_sft_recovery/README.md](wmdp_sft_recovery/README.md) -- SFT-recovery
-  design and gotchas (Probe 3)
+See `results.md` for the full results and analysis.
+
+## Results
+
+### 1. Refusal-direction ablation
+
+A clean refusal direction could only be extracted from the ILU-RMU checkpoint. Ablating this direction reduced the refusal rate from 98% to 0%, but did not recover WMDP-Bio accuracy.
+
+The other checkpoints did not give a clean refusal direction. RMU only partially reduced refusal, IDK-AP already had almost no refusal behavior, and GradDiff, NPO, and NPO-ILU produced responses that were too degenerate to interpret reliably.
+
+Across the six checkpoints, refusal-direction ablation did not recover WMDP-Bio accuracy beyond the matched and random controls.
+
+See `direction_extraction.md` for the direction extraction and selection procedure.
+
+### 2. Forget-set representation-direction ablation
+
+This experiment follows the approach of [Arditi & Chughtai](https://www.lesswrong.com/posts/6QYpXEscd8GuE7BgW/unlearning-via-rmu-is-mostly-shallow). The direction is constructed from the mean activation difference between the base and unlearned models on forget-set prompts.
+
+For the Llama-3-8B-Instruct checkpoints, this recovered a substantial part of the WMDP-Bio accuracy gap for RMU and ILU-RMU:
+
+* **RMU:** 57% of the gap recovered
+* **ILU-RMU:** 61% of the gap recovered
+* **NPO:** 64% of the gap recovered, but the model's generations were highly degenerate
+* **IDK-AP:** 19% of the gap recovered
+* **GradDiff:** no confirmed recovery
+* **NPO-ILU:** no confirmed recovery
+
+The RMU and ILU-RMU results replicate the qualitative finding from previous work. The experiment also extends the test to the other unlearning methods.
+
+The NPO result is difficult to interpret because the model produces incoherent text even when its WMDP accuracy increases.
+
+See `junk_direction_ablation/README.md` for the full pipeline.
+
+### 3. Unrelated supervised fine-tuning
+
+The third experiment tests a different recovery mechanism. Instead of modifying an activation direction, the unlearned models are fine-tuned on GSM8K using QLoRA.
+
+WMDP-Bio accuracy increased for five of the six methods.
+
+For RMU, ILU-RMU, and NPO, WMDP-Bio accuracy increased while MMLU accuracy remained roughly flat. This is consistent with recovery that is specific to the forget set.
+
+GradDiff was different. Its WMDP-Bio accuracy increased, but MMLU accuracy increased by a similar amount. This suggests that the WMDP improvement was caused by a general increase in model capability rather than recovery of the unlearned knowledge.
+
+NPO-ILU also showed an increase in WMDP accuracy, but its generated responses were incoherent, making the result difficult to interpret as genuine recovery.
+
+See `wmdp_sft_recovery/README.md` for the SFT setup and results.
+
+### 4. Benchmark accuracy is not enough
+
+The recovery experiments above use WMDP forced-choice accuracy. This measures the log-likelihood assigned to the four answer choices, but the model does not generate an explanation.
+
+To check whether the apparent recovery corresponded to meaningful behavior, I generated free-text responses for questions whose answers changed after an intervention.
+
+The responses were classified as:
+
+* **Genuine recovery:** the reasoning supports the correct answer.
+* **Format artifact:** the model selects the correct answer, but the generated text does not support it.
+* **Contradictory reasoning:** the explanation contradicts the selected answer or is incoherent.
+
+Only about 40 to 47% of the examined recovered responses showed genuine reasoning supporting the correct answer.
+
+The qualitative evaluation also showed that some contradictions were already present in the unlearned checkpoints. This means that benchmark accuracy can change without the model demonstrating coherent knowledge of the answer.
+
+This is particularly important for NPO and NPO-ILU, where free-text generation reveals degeneration that is not apparent from forced-choice accuracy alone.
+
+See `results.md` for the qualitative results and examples.
+
+## Repository structure
+
+* `results.md` -- summary of the results from all three probes
+* `direction_extraction.md` -- refusal-direction extraction, candidate sweep, and selection procedure
+* `junk_direction_ablation/README.md` -- forget-set representation-direction extraction and evaluation
+* `wmdp_sft_recovery/README.md` -- unrelated SFT recovery setup and evaluation
+* `notebooks/` -- self-contained notebooks showing the main steps of each probe
+* `scripts/` -- evaluation and analysis scripts
+* `examples/` -- example scripts for running the full pipelines
+
+The notebooks are intended to make the experiments easier to follow without having to trace the full script pipeline. Each notebook contains the main steps for that probe, including activation extraction, direction construction, ablation, SFT setup, and evaluation.
 
 ---
 
@@ -68,45 +101,53 @@ Companion write-up: *Probing Knowledge Recovery in Unlearned Models*.
 pip install -r requirements.txt
 ```
 
-The scripts accept Hugging Face model IDs or local checkpoint paths.
+The scripts accept either Hugging Face model IDs or local checkpoint paths.
 
 ---
 
 ## Model checkpoints
 
-WMDP-unlearned checkpoints are from [OPTML-Group](https://huggingface.co/OPTML-Group)
-(GradDiff, IDK-AP, ILU-RMU, NPO, NPO-ILU) and [ScaleAI](https://huggingface.co/ScaleAI/mhj-llama3-8b-rmu)
-(RMU), all unlearned from `meta-llama/Meta-Llama-3-8B-Instruct`. This
-repository focuses on direction extraction/evaluation and SFT-recovery
-evaluation rather than reproducing the unlearning training pipelines
-themselves.
+The experiments use six WMDP-unlearned checkpoints, all starting from `meta-llama/Meta-Llama-3-8B-Instruct`.
+
+Five checkpoints are from [OPTML-Group](https://huggingface.co/OPTML-Group):
+
+* GradDiff
+* IDK-AP
+* ILU-RMU
+* NPO
+* NPO-ILU
+
+The RMU checkpoint is from [ScaleAI](https://huggingface.co/ScaleAI/mhj-llama3-8b-rmu).
+
+The repository focuses on evaluating these checkpoints rather than reproducing the unlearning training procedures.
 
 ---
 
-## Probe 1: refusal-direction ablation
+# Probe 1: Refusal-direction ablation
 
-> An earlier script, `wmdp_bio_refusal_direction_eval.py`, is removed from
-> this repo. It re-tokenized already-templated prompts (silently
-> double-inserting the BOS token, which also undercounted its own
-> forced-choice WMDP-Bio scoring vs. `lm_eval`), only searched the final
-> token position instead of the full post-instruction grid, and applied
-> neither Arditi et al.'s nor COSMIC's selection filters. `extract_refusal_direction.py`
-> + `wmdp_bio_lm_eval_ablation.py` (below) fix all of that -- see
-> [direction_extraction.md](direction_extraction.md) for the full rationale.
+One possible explanation for knowledge suppression is that unlearning hides the knowledge behind refusal behavior.
 
-**1. Extract a refusal direction.** `extract_refusal_direction.py` computes
-difference-in-means candidates over the last 5 post-instruction token
-positions x every layer, using Arditi et al. (2024)'s own AdvBench-harmful vs.
-Alpaca-harmless setup (a general "refusal" direction, not bio-specific).
-`--selection-method both` (the default) computes **both** selection
-algorithms from a single candidate sweep:
+[Arditi et al. (2024)](https://arxiv.org/abs/2406.11717) found that refusal behavior in language models can be mediated by a single direction in activation space. If the same mechanism explains the behavior of an unlearned model, removing the refusal direction should allow the model to access the forgotten knowledge.
 
-- `mean_diff` -- Arditi et al. (2024) Appendix C.1's causal selection
-  (minimize bypass_score subject to induce_score > 0, kl_score < 0.1,
-  layer < 0.8L).
-- `cosmic` -- Siu et al. (2025) COSMIC's concept-inversion cosine-similarity
-  selection on the low-similarity layers, with the same KL/layer-fraction
-  filters used in the official COSMIC repo (`wang-research-lab/COSMIC`).
+The experiment therefore has two parts:
+
+1. Extract and validate a refusal direction.
+2. Ablate the direction and measure WMDP-Bio accuracy.
+
+The direction is only used for the recovery experiment if it first passes a behavioral validation test.
+
+## Extracting the refusal direction
+
+`extract_refusal_direction.py` computes difference-in-means directions at every layer and at the last five post-instruction token positions.
+
+The prompts come from the same general setup used by Arditi et al., with harmful AdvBench prompts and harmless Alpaca prompts. The direction is therefore a general refusal direction rather than a direction specifically constructed from WMDP-Bio.
+
+The script supports two selection methods:
+
+* `mean_diff` -- the causal selection procedure from Arditi et al.
+* `cosmic` -- the concept-inversion selection procedure from COSMIC.
+
+Both methods are run from the same candidate sweep.
 
 ```bash
 python scripts/extract_refusal_direction.py \
@@ -116,19 +157,19 @@ python scripts/extract_refusal_direction.py \
   --output-root outputs/idk-ap/direction_extraction/generic
 ```
 
-Writes, per selection method: `direction_{method}.pt` (with selection
-diagnostics in the metadata), `candidate_diagnostics.csv` (every candidate's
-bypass/induce/KL/COSMIC scores, for auditing), and
-`direction_{method}_matched_control.pt` -- a split-half difference-in-means
-direction from a fresh, disjoint harmless prompt pool at the same
-(position, layer), testing whether ablating *any* direction built this way at
-this spot moves WMDP-Bio accuracy, not just the one selected as "refusal."
-(`mean_diff` finds zero passing candidates for 4 of the 6 models tested here
--- see [direction_extraction.md](direction_extraction.md) for why the
-pipeline always runs both methods rather than picking one upfront.)
+For each selection method, the script writes:
 
-**2. Evaluate WMDP-Bio accuracy under ablation.** `wmdp_bio_lm_eval_ablation.py`
-scores a direction against `lm_eval`'s own `wmdp_bio` task:
+* `direction_{method}.pt` -- the selected direction
+* `candidate_diagnostics.csv` -- diagnostics for every candidate
+* `direction_{method}_matched_control.pt` -- a matched control direction constructed at the same layer and position
+
+The diagnostics include bypass, induce, KL, and COSMIC scores.
+
+The matched control tests whether ablating any direction constructed in the same way at the selected layer and position changes WMDP-Bio accuracy.
+
+## Evaluate WMDP-Bio under ablation
+
+`wmdp_bio_lm_eval_ablation.py` evaluates the selected direction using the same `lm_eval` WMDP-Bio task used for the baseline results.
 
 ```bash
 python scripts/wmdp_bio_lm_eval_ablation.py \
@@ -140,18 +181,20 @@ python scripts/wmdp_bio_lm_eval_ablation.py \
   --apply-chat-template
 ```
 
-Runs `wmdp_bio` on the same loaded model across `baseline` (no hook, unless
-`--skip-baseline`), `selected_direction_ablation`, `matched_control_ablation`
-(if given), and `random_direction_ablation_{0..N}` controls, writing a
-comparison summary (including a random-control mean/std and a
-`selected_control_z` distance from that distribution) to
-`wmdp_bio_lm_eval_summary.json`.
+The evaluation compares:
 
-**3. Confirm the direction does something.** A null accuracy result is only
-informative if the direction demonstrably affects behavior.
-`wmdp_refusal_behavior_check.py` generates on 100 held-out AdvBench prompts
-(disjoint from extraction) with and without ablation and measures the
-refusal rate, reusing the exact ablation code from step 2:
+* baseline
+* selected-direction ablation
+* matched-control ablation
+* random-direction ablations
+
+The results are saved in `wmdp_bio_lm_eval_summary.json`.
+
+## Check whether the direction affects refusal
+
+A null WMDP result is only useful if the direction actually changes the behavior it is supposed to control.
+
+`wmdp_refusal_behavior_check.py` generates responses to 100 held-out AdvBench prompts and measures the refusal rate with and without ablation.
 
 ```bash
 python scripts/wmdp_refusal_behavior_check.py \
@@ -163,11 +206,11 @@ python scripts/wmdp_refusal_behavior_check.py \
   --output-root outputs/idk-ap/wmdp_refusal_behavior_check/generic_cosmic
 ```
 
-**4. Sanity-check the ablation hook itself.** `hook_activation_check.py`
-scores the same `lm_eval` request twice on one loaded model -- once with no
-hook, once with the ablation hook registered -- and asserts the per-choice
-loglikelihoods actually differ, so a null WMDP-Bio result can't be a silently
-inactive hook:
+The prompts used for this evaluation are separate from the prompts used to extract the direction.
+
+## Check the ablation hook
+
+`hook_activation_check.py` checks that the ablation hook actually changes the model's per-choice log-likelihoods.
 
 ```bash
 python scripts/hook_activation_check.py \
@@ -176,7 +219,11 @@ python scripts/hook_activation_check.py \
   --num-docs 3
 ```
 
-**Full pipeline, one model, both selection methods:**
+This provides a basic sanity check that a null WMDP result is not caused by an inactive hook.
+
+## Run the full pipeline
+
+For one model, the full pipeline can be run with:
 
 ```bash
 MODEL=OPTML-Group/IDK-AP-WMDP-llama3-8b-instruct \
@@ -186,121 +233,164 @@ HARDWARE_PROFILE=a100 \
 bash examples/run_full_wmdp_bio_pipeline.sh
 ```
 
-Repeat per model. Random-direction and matched-control conditions are only
-computed once per model (the first ablation-eval call); subsequent calls for
-the same model pass `--num-random-controls 0`.
+The pipeline should be run separately for each checkpoint.
 
-**Paired significance testing.** `wmdp_bio_lm_eval_ablation.py`,
-`junk_direction_ablation/eval_junk_ablation_lm_eval.py`, and
-`wmdp_sft_recovery/eval_recovery_lm_eval.py` all persist per-question
-correctness to `per_doc_correctness/<task>.json` (doc_id -> bool), since
-every condition in this repo is scored on the *same* question set and a
-paired test (exact binomial McNemar + a paired bootstrap CI) is the correct
-tool -- not two independent-sample tests. `scripts/analyze_paired_recovery.py`
-runs that comparison between any two conditions' persisted files:
+Random-direction and matched-control conditions only need to be computed once for each model. Later runs can use `--num-random-controls 0`.
+
+## Paired significance testing
+
+All three evaluation pipelines save per-question correctness because every condition is evaluated on the same WMDP questions.
+
+This allows the recovery conditions to be compared using paired tests rather than independent-sample tests.
+
+`scripts/analyze_paired_recovery.py` compares two saved correctness files using an exact McNemar test and a paired bootstrap confidence interval.
 
 ```bash
 python scripts/analyze_paired_recovery.py \
   --correctness-a outputs/idk-ap/wmdp_bio_lm_eval/generic_cosmic/per_doc_correctness/wmdp_bio/selected_direction_ablation.json \
   --correctness-b outputs/idk-ap/wmdp_bio_lm_eval/generic_cosmic/per_doc_correctness/wmdp_bio/matched_control_ablation.json \
-  --label-a selected_direction --label-b matched_control \
+  --label-a selected_direction \
+  --label-b matched_control \
   --output-json outputs/idk-ap/wmdp_bio_lm_eval/generic_cosmic/mcnemar_selected_vs_matched_control.json
 ```
 
-**Result:** across six checkpoints, ablating a rank-1 refusal direction does
-not recover WMDP-Bio accuracy beyond random-direction or matched-construction
-controls -- not even for **ILU-RMU**, the only fully validated
-behavioral-bypass row (refusal 98%&rarr;0% with 100% clean bypass).
-GradDiff's refusal-rate collapse (61%&rarr;0%) is only partially validated:
-ablated clean bypass is 30%, with most generations still degenerate on an
-already-broken model. See [results.md](results.md) for the full
-per-model breakdown and the paired-significance tables.
+## Result
+
+Across the six checkpoints, refusal-direction ablation did not recover WMDP-Bio accuracy beyond the matched or random controls.
+
+ILU-RMU was the only checkpoint where a refusal direction could be cleanly validated. Ablating it reduced refusal from 98% to 0%, but WMDP-Bio accuracy did not increase.
+
+GradDiff also showed a large reduction in refusal after ablation, but its generations were too degenerate to interpret the result as a clean behavioral bypass.
+
+See `results.md` for the per-model results and statistical comparisons.
 
 ---
 
-## Probe 2: forget-domain representation-direction ablation
+# Probe 2: Forget-set representation-direction ablation
 
-A differently-built direction: instead of a generic refusal direction,
-[`junk_direction_ablation/`](junk_direction_ablation/) extracts
-`û = normalize(mean(a_unlearned) - mean(a_base))` directly from forget-domain
-text (WMDP bio/cyber-forget corpora), targeting whatever RMU-family training
-actually did to forget-domain representations rather than a refusal signal.
-This replicates and extends [Arditi & Chughtai's finding](https://www.lesswrong.com/posts/6QYpXEscd8GuE7BgW/unlearning-via-rmu-is-mostly-shallow)
-(~71% WMDP-Bio gap recovery on RMU-unlearned Zephyr-7B) to Llama-3-8B-Instruct
-and to five additional unlearning methods:
+The second probe uses a different type of direction.
+
+Instead of extracting a general refusal direction, it constructs a direction directly from the difference between the base and unlearned models on forget-set prompts:
+
+```text
+u = normalize(mean(a_unlearned) - mean(a_base))
+```
+
+This follows the approach used by [Arditi & Chughtai](https://www.lesswrong.com/posts/6QYpXEscd8GuE7BgW/unlearning-via-rmu-is-mostly-shallow), who found substantial recovery after ablating a forget-domain representation direction in an RMU-unlearned Zephyr-7B model.
+
+Here the same idea is tested on Llama-3-8B-Instruct and extended to the other unlearning methods.
 
 ```bash
 cd junk_direction_ablation
-bash run_step3.sh rmu                              # RMU / ILU-RMU positive-control path
-bash run_loss_based_junk_null.sh                    # GradDiff / NPO / NPO-ILU / IDK-AP null check
+
+bash run_step3.sh rmu
+bash run_loss_based_junk_null.sh
 ```
 
-See [`junk_direction_ablation/README.md`](junk_direction_ablation/README.md)
-for the pipeline (extraction, ablation arms, blinded qualitative labeling)
-and [results.md](results.md#a-differently-built-direction-junk-direction-ablation-recovers-rmu-and-ilu-rmu-cleanly)
-for the outcome: 57% (RMU) and 61% (ILU-RMU) gap recovery with an
-overwhelming McNemar signal, and a pre-registered null for the other four
-methods that survives Bonferroni correction -- so "direction ablation finds
-nothing" (Probe 1's result) turns out to be a property of the
-*refusal*-direction construction on these methods, not of direction ablation
-as a technique.
+The pipeline includes:
+
+* direction extraction
+* layer and pooling sweeps
+* direction ablation
+* matched and random controls
+* WMDP-Bio evaluation
+* qualitative evaluation of changed generations
+
+The main result was:
+
+* **RMU:** 57% gap recovery
+* **ILU-RMU:** 61% gap recovery
+* **NPO:** 64% gap recovery, but with highly degenerate generations
+* **IDK-AP:** 19% gap recovery
+* **GradDiff:** no confirmed recovery
+* **NPO-ILU:** no confirmed recovery
+
+The RMU and ILU-RMU results are consistent with the earlier finding from Arditi & Chughtai. The experiment also shows that the same construction can produce smaller or ambiguous effects for other unlearning methods.
+
+See `junk_direction_ablation/README.md` for the full pipeline and `results.md` for the results.
 
 ---
 
-## Probe 3: unrelated SFT recovery
+# Probe 3: Unrelated SFT recovery
 
-A different recovery mechanism entirely: does unrelated fine-tuning undo
-unlearning by disturbing the unlearned weights, rather than by ablating a
-direction? [`wmdp_sft_recovery/`](wmdp_sft_recovery/) runs QLoRA SFT on
-`openai/gsm8k` (near-zero mutual information with WMDP-bio, so any bio
-movement afterward is the unlearning coming undone, not new knowledge going
-in) on each unlearned model plus a full-knowledge control, checkpointed at
-1000/3000/6000 examples, evaluated via `lm_eval` on `wmdp_bio` (recovery
-signal), `mmlu` (utility gate), and `gsm8k` (uptake check):
+The third probe tests whether unrelated fine-tuning can recover forgotten knowledge.
+
+The unlearned models are fine-tuned on GSM8K using QLoRA. GSM8K is unrelated to WMDP-Bio, so the experiment tests whether changing the model through unrelated training can restore its performance on the forget set.
+
+Each unlearned model is evaluated at 1000, 3000, and 6000 training examples.
+
+A full-knowledge base model is also fine-tuned with the same procedure. This provides a control for changes in WMDP-Bio accuracy caused by the fine-tuning process itself.
+
+The models are evaluated on:
+
+* `wmdp_bio` for recovery
+* `mmlu` for general capability
+* `gsm8k` for training-data uptake
 
 ```bash
 cd wmdp_sft_recovery
-bash run_base_control.sh                          # full-knowledge control
-METHODS="RMU" bash run_unlearned.sh                # one unlearned model at a time
-python aggregate_table.py                          # -> results/wmdp_sft_recovery/recovery_table.md
+
+bash run_base_control.sh
+METHODS="RMU" bash run_unlearned.sh
+python aggregate_table.py
 ```
 
-See [`wmdp_sft_recovery/README.md`](wmdp_sft_recovery/README.md) for the full
-design (controls, precision/chat-template gotchas, and the cross-check
-against this repo's ablation-arm baselines) and
-[results.md](results.md#sft-recovery-does-unrelated-fine-tuning-undo-unlearning)
-for the outcome, including `sample_flipped_generations.py`'s qualitative
-read of the free-text completions behind the accuracy numbers.
+WMDP-Bio accuracy increased for five of the six unlearned models.
+
+For RMU, ILU-RMU, and NPO, WMDP-Bio accuracy increased while MMLU remained roughly flat. This is consistent with a recovery effect that is more specific to the forget set.
+
+GradDiff showed a different pattern. Its WMDP-Bio accuracy increased, but MMLU increased by a similar amount. This makes it difficult to distinguish recovery from a general increase in model capability.
+
+NPO-ILU also showed an increase in WMDP-Bio accuracy, but its generated text was incoherent.
+
+See `wmdp_sft_recovery/README.md` for the full setup and `results.md` for the results.
 
 ---
 
-## Why accuracy alone isn't enough
+# Why benchmark accuracy is not enough
 
-Every probe above is scored as forced-choice loglikelihood accuracy on
-`wmdp_bio` -- the model never generates anything, so an accuracy rise only
-means the argmax answer flipped, not that the model reasoned its way there.
-Both Probe 2 (`junk_direction_ablation/sample_flipped_generations.py`,
-`sample_stable_correct_generations.py`, `sample_base_correct_generations.py`)
-and Probe 3 (`wmdp_sft_recovery/sample_flipped_generations.py`) re-generate
-**free-form** completions for questions that flipped wrong-to-right, and a
-human classifies each as **genuine** (reasoning supports the correct
-answer), **format-artifact** (degenerate/repetitive output that happens to
-match the gold letter), or **contradictory** (the model's own reasoning
-names a different option than the one credited as correct). This is what
-surfaces, e.g., NPO-ILU's benchmark recovery being an argmax shift on a model
-that cannot generate coherent text, and RMU-family checkpoints contradicting
-their own stably-correct answers even without any ablation touching them.
-See [results.md](results.md) for every labeled table and the blinding
-protocol behind the n=30 rounds.
+All three probes use forced-choice WMDP-Bio accuracy. The model is scored on the likelihood it assigns to the four answer choices.
+
+The model does not need to generate a coherent explanation.
+
+This means that an increase in accuracy does not necessarily mean that the model has recovered the underlying knowledge.
+
+To investigate this, the repository includes scripts that generate free-text responses for questions whose answers changed after an intervention.
+
+The responses are classified as:
+
+* **Genuine recovery:** the reasoning supports the correct answer.
+* **Format artifact:** the model selects the correct answer, but the generated text does not support it.
+* **Contradictory reasoning:** the generated reasoning contradicts the selected answer or is incoherent.
+
+The same evaluation is also performed on questions that remain correct before and after the intervention. This helps determine how much of the contradictory behavior is caused by the intervention and how much is already present in the checkpoint.
+
+Only about 40 to 47% of the examined changed responses showed genuine reasoning supporting the correct answer.
+
+This qualitative evaluation is particularly important for NPO and NPO-ILU, where forced-choice accuracy can increase even though the model produces incoherent free-text responses.
+
+The relevant scripts are:
+
+```text
+junk_direction_ablation/
+    sample_flipped_generations.py
+    sample_stable_correct_generations.py
+    sample_base_correct_generations.py
+
+wmdp_sft_recovery/
+    sample_flipped_generations.py
+```
+
+See `results.md` for the qualitative results and the blinding procedure.
 
 ---
 
-## References
+# References
 
-- Arditi et al. (2024). [Refusal in Language Models Is Mediated by a Single Direction.](https://arxiv.org/abs/2406.11717)
-- Siu et al. (2025). [COSMIC: Generalized Refusal Direction Identification in LLM Activations.](https://arxiv.org/abs/2506.00085)
-- Chughtai, B. (2024). [Unlearning via RMU is mostly shallow.](https://www.lesswrong.com/posts/6QYpXEscd8GuE7BgW/unlearning-via-rmu-is-mostly-shallow) (Arditi & Chughtai's forget-domain representation-direction result that Probe 2 replicates and extends.)
-- Łucki et al. (2024). [An Adversarial Perspective on Machine Unlearning for AI Safety.](https://arxiv.org/abs/2409.18025)
-- Hu et al. (2025). [Unlearning or Obfuscating? Jogging the Memory of Unlearned LLMs via Benign Relearning.](https://arxiv.org/abs/2406.13356)
-- Deeb & Roger (2024). [Do Unlearning Methods Remove Information from Language Model Weights?](https://arxiv.org/abs/2410.08827)
-- WMDP: [The WMDP Benchmark: Measuring and Reducing Malicious Use With Unlearning.](https://www.wmdp.ai/)
+* Arditi et al. (2024). [Refusal in Language Models Is Mediated by a Single Direction.](https://arxiv.org/abs/2406.11717)
+* Siu et al. (2025). [COSMIC: Generalized Refusal Direction Identification in LLM Activations.](https://arxiv.org/abs/2506.00085)
+* Chughtai, B. (2024). [Unlearning via RMU is mostly shallow.](https://www.lesswrong.com/posts/6QYpXEscd8GuE7BgW/unlearning-via-rmu-is-mostly-shallow)
+* Łucki et al. (2024). [An Adversarial Perspective on Machine Unlearning for AI Safety.](https://arxiv.org/abs/2409.18025)
+* Hu et al. (2025). [Unlearning or Obfuscating? Jogging the Memory of Unlearned LLMs via Benign Relearning.](https://arxiv.org/html/2406.13356v1)
+* Deeb & Roger (2024). [Do Unlearning Methods Remove Information from Language Model Weights?](https://arxiv.org/abs/2410.08827)
+* WMDP. [The WMDP Benchmark: Measuring and Reducing Malicious Use With Unlearning.](https://www.wmdp.ai/)
